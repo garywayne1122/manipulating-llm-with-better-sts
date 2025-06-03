@@ -439,12 +439,12 @@ if __name__ == "__main__":
     mode = args.mode
     save_state = args.save_state
     # Use models with similar tokenizers
-    model_path_llama_7b = "meta-llama/Llama-2-7b-chat-hf"
+    model_path_llama_7b = "meta-llama/Llama-3.2-1B"
 
     if mode == "transfer":
         model_path_vicuna_7b = "lmsys/vicuna-7b-v1.5"
     
-    batch_size = 150
+    batch_size = 3
 
     # Set device
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
