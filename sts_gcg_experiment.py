@@ -92,26 +92,16 @@ def run_trial(model, tokenizer, catalog, query, target_name, sts_text=None, shuf
 
     system, user_msg = build_prompt(trial_catalog, query, sts_text, target_name)
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user_msg}]
-output = model.generate(
-    input_ids, max_new_tokens=256, temperature=0.6, top_p=0.9,
-    do_sample=True, pad_token_id=tokenizer.eos_token_id
-)
-generated = tokenizer.decode(output[0][input_ids.shape[1]:], skip_special_tokens=True)
-inputs = tokenizer.apply_chat_template(
-    messages, add_generation_prompt=True, return_tensors="pt", return_dict=True
-).to(DEVICE)
+    inputs = tokenizer.apply_chat_template(
+        messages, add_generation_prompt=True, return_tensors="pt", return_dict=True
+    ).to(DEVICE)
 
-output = model.generate(
-    **inputs, max_new_tokens=256, temperature=0.6, top_p=0.9,
-    do_sample=True, pad_token_id=tokenizer.eos_token_id
-)
-generated = tokenizer.decode(output[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
     with torch.no_grad():
         output = model.generate(
-            input_ids, max_new_tokens=256, temperature=0.6, top_p=0.9,
+            **inputs, max_new_tokens=256, temperature=0.6, top_p=0.9,
             do_sample=True, pad_token_id=tokenizer.eos_token_id
         )
-    generated = tokenizer.decode(output[0][input_ids.shape[1]:], skip_special_tokens=True)
+    generated = tokenizer.decode(output[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
     rank = get_rank(generated, target_name, trial_catalog)
     return rank, generated
 
