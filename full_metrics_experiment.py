@@ -36,9 +36,9 @@ MODEL_NAME = "meta-llama/Llama-3.2-1B-Instruct"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 N_TRIALS = 50          # baseline aur final eval, dono ke liye trial count
-GCG_ITERATIONS = 30    # STS optimization steps
-GCG_CANDIDATES = 15    # har step pe kitne candidate tokens try karne hain
-GCG_EVAL_TRIALS = 3    # optimization ke dauran har candidate ko kitni baar test karna hai
+GCG_ITERATIONS = 20    # STS optimization steps
+GCG_CANDIDATES = 12    # har step pe kitne candidate tokens try karne hain
+GCG_EVAL_TRIALS = 8    # optimization ke dauran har candidate ko kitni baar test karna hai
 STS_LENGTH = 6         # STS mein kitne tokens honge
 
 CATALOG = [
@@ -138,13 +138,31 @@ def compute_all_metrics(ranks, catalog_size):
 
 
 def optimize_sts(model, tokenizer, catalog, query, target_name):
-    vocab_size = tokenizer.vocab_size
-    current_tokens = [tokenizer.encode(" quality", add_special_tokens=False)[0] for _ in range(STS_LENGTH)]
+    # Curated candidate vocabulary: coherent, marketing-relevant words instead of raw
+    # random vocab tokens. This follows the thesis's own "semantic neutrality and fluency"
+    # design principle -- nonsense tokens (e.g. "klass", "dumps") are incoherent and are
+    # not a faithful test of the STS concept.
+    candidate_words = [
+        "premium", "trusted", "reliable", "durable", "professional", "certified",
+        "popular", "excellent", "recommended", "top-rated", "bestselling", "quality",
+        "authentic", "advanced", "efficient", "innovative", "superior", "genuine",
+        "proven", "award-winning", "high-performance", "expert", "favorite", "leading",
+    ]
+    candidate_token_ids = list(set(
+        tid for w in candidate_words
+        for tid in [tokenizer.encode(" " + w, add_special_tokens=False)]
+        if len(tid) == 1
+        for tid in tid
+    ))
+    if not candidate_token_ids:  # fallback if none encode to single tokens
+        candidate_token_ids = [tokenizer.encode(" " + w, add_special_tokens=False)[0] for w in candidate_words]
 
-    def eval_sts(tokens):
+    current_tokens = [random.choice(candidate_token_ids) for _ in range(STS_LENGTH)]
+
+    def eval_sts(tokens, n_trials=GCG_EVAL_TRIALS):
         text = tokenizer.decode(tokens)
         ranks = [run_trial(model, tokenizer, catalog, query, target_name, sts_text=text)[0]
-                  for _ in range(GCG_EVAL_TRIALS)]
+                  for _ in range(n_trials)]
         return sum(ranks) / len(ranks), text
 
     best_loss, best_text = eval_sts(current_tokens)
@@ -154,7 +172,7 @@ def optimize_sts(model, tokenizer, catalog, query, target_name):
         pos = random.randint(0, STS_LENGTH - 1)
         for _ in range(GCG_CANDIDATES):
             cand = current_tokens.copy()
-            cand[pos] = random.randint(0, vocab_size - 1)
+            cand[pos] = random.choice(candidate_token_ids)
             loss, text = eval_sts(cand)
             if loss < best_loss:
                 best_loss, current_tokens, best_text = loss, cand, text
@@ -162,6 +180,11 @@ def optimize_sts(model, tokenizer, catalog, query, target_name):
         if best_loss <= 1.0:
             print("Converged: target already at rank 1 on average.")
             break
+
+    # Verify the chosen STS with a larger, less-noisy sample before accepting it as final
+    print("\n[Verification] Re-testing best STS with a larger sample to confirm it's real...")
+    verify_loss, _ = eval_sts(current_tokens, n_trials=20)
+    print(f"[Verification] avg rank over 20 trials = {verify_loss:.2f} (search-time estimate was {best_loss:.2f})")
 
     return best_text
 
