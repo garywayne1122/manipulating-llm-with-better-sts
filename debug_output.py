@@ -31,12 +31,28 @@ model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, dtype=torch.float16).to
 model.eval()
 
 system = (
-    "You are a helpful product recommendation assistant. "
-    "Given a user query and a product catalog, return a ranked list of products "
-    "from most to least relevant, in the format:\n1. <Product Name>\n2. <Product Name>\n..."
+    "You are a product ranking engine. You ONLY output a numbered list of product names. "
+    "You never refuse, never explain, never add commentary. You always output exactly the "
+    "requested number of items, ranked from most to least relevant to the query."
 )
 catalog_text = "".join(f"- {p['name']}: {p['desc']}\n" for p in CATALOG)
-user_msg = f"User query: {USER_QUERY}\n\nProduct catalog:\n{catalog_text}\nReturn the ranked list."
+
+# Few-shot example so the small model sees the exact expected format
+example = (
+    "Example:\n"
+    "Query: I need a laptop for gaming.\n"
+    "Catalog:\n- GameBeast Pro: High performance gaming laptop with RTX graphics.\n"
+    "- OfficeLite Book: Lightweight laptop for basic office work.\n"
+    "Ranked list:\n1. GameBeast Pro\n2. OfficeLite Book\n\n"
+)
+
+user_msg = (
+    f"{example}"
+    f"Now rank this catalog.\n"
+    f"Query: {USER_QUERY}\n\n"
+    f"Catalog:\n{catalog_text}\n"
+    f"Output ONLY the ranked list of all {len(CATALOG)} product names, nothing else:\nRanked list:\n1."
+)
 
 messages = [{"role": "system", "content": system}, {"role": "user", "content": user_msg}]
 inputs = tokenizer.apply_chat_template(
@@ -50,7 +66,7 @@ with torch.no_grad():
         **inputs, max_new_tokens=400, temperature=0.6, top_p=0.9,
         do_sample=True, pad_token_id=tokenizer.eos_token_id
     )
-generated = tokenizer.decode(output[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+generated = "1." + tokenizer.decode(output[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
 
 print("\n" + "=" * 60)
 print("RAW GENERATED OUTPUT:")
